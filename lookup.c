@@ -37,14 +37,14 @@ int main(int argc, char **argv) {
 	printf("Found %i entries:\n", ret);
 	printf("%-25s %-7s %-7s %s\n", "NAME", "TYPE", "TTL", "DATA");
 	for(loop = 0; loop < ret; loop++) {
-		printf("%-25.25s %-7.7s %7i ", response[loop].name, dns_ttos(response[loop].type), response[loop].ttl);
+		printf("%-25s %-7s %-7i ", response[loop].name, dns_ttos(response[loop].type), response[loop].ttl);
 		switch(response[loop].type) {
 		case T_A:
 			tmpaddr.s_addr = htonl(response[loop].info.a.addr);
 			printf("%s\n", inet_ntoa(tmpaddr));
 		break;
 		case T_MX:
-			printf("%3i %s\n", response[loop].info.mx.pref, response[loop].info.mx.addr);
+			printf("%-3i %s\n", response[loop].info.mx.pref, response[loop].info.mx.addr);
 		break;
 		case T_CNAME:
 			printf("%s\n", response[loop].info.cname.addr);
@@ -56,11 +56,14 @@ int main(int argc, char **argv) {
 			printf("%s\n", response[loop].info.ptr.addr);
 		break;
 		case T_SOA:
-			printf("a = %s; m = %s; s = %i; ref = %i; ret = %i; e = %i; t = %i\n", 
-				response[loop].info.soa.addr, response[loop].info.soa.maintainer,
-				response[loop].info.soa.serial, response[loop].info.soa.refresh,
-				response[loop].info.soa.retry, response[loop].info.soa.expire,
-				response[loop].info.soa.def_ttl);
+			printf("\n");
+			printf("\tPrimary NS:   %s\n", response[loop].info.soa.addr);
+			printf("\tMaintainer:   %s\n", response[loop].info.soa.maintainer);
+			printf("\tSerial:       %i\n", response[loop].info.soa.serial);
+			printf("\tRefresh:      %i\n", response[loop].info.soa.refresh);
+			printf("\tRetry:        %i\n", response[loop].info.soa.retry);
+			printf("\tExpire:       %i\n", response[loop].info.soa.expire);
+			printf("\tDefault TTL:  %i\n", response[loop].info.soa.def_ttl);
 		break;
 		case T_NULL:
 			printf("\n");
