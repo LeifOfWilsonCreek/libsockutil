@@ -54,6 +54,6 @@ struct ns_response {
  * This returns the number of elements filled into "response".  On error, -1 is
  * returned and h_errno is set.  If the result is too large, it will return -1
  * and set h_errno to NO_RECOVERY. */
-int lookup(char *name, int class, int type, struct ns_response *response, int max_answers, char *buf, size_t buf_size);
+int lookup(const char *name, int class, int type, struct ns_response *response, int max_answers, char *buf, size_t buf_size);
 
 #endif

@@ -222,18 +222,21 @@ int dns_stot(const char *type) {
 }
 
 #ifdef DEBUG
-#	define PANIC  \
-		printf("Error: res_pos = %i; type = %s (%i); line = %i\n", res_pos, dns_ttos(response[res_pos].type), response[res_pos].type, __LINE__);  \
-		for(tmpint = 0; tmpint < res_pos; tmpint++) {  \
-			printf("%s %s\n", response[tmpint].name, dns_ttos(response[tmpint].type));  \
-		}
+#	define PANIC { \
+		h_errno = NO_RECOVERY;										\
+		fprintf(stderr, "Error: res_pos = %i; type = %s (%i); line = %i\n", res_pos, dns_ttos(response[res_pos].type), response[res_pos].type, __LINE__);  \
+		tmpint = -1;											\
+		while(++tmpint < res_pos)									\
+			fprintf(stderr, "%s %s\n", response[tmpint].name, dns_ttos(response[tmpint].type));	\
+		return -1;											\
+	}
 #else
-#	define PANIC
+#	define PANIC {h_errno = NO_RECOVERY; return -1;}
 #endif
 
 
 /* Do a DNS lookup */
-int lookup(char *name, int class, int type, struct ns_response *response, int max_answers, char *buf, size_t buf_size) {
+int lookup(const char *name, int class, int type, struct ns_response *response, int max_answers, char *buf, size_t buf_size) {
 	unsigned char ans_buf[buf_size], *ptr, *data, *ans_end;
 	HEADER *header;
 	int loop, res_pos = 0, tmpint;
@@ -244,12 +247,13 @@ The format of a res_query response is something like this:
 <ns records><ar records - additional resources>
 
  - All data is network-endian.  Remember to convert everything as you go.
- - All records are in the format <name (compressed string)><type (short)>
-<class (short)><ttl (long)><data_len (short)><data_len bytes of actual data>
- - I think the qd records leave out the ttl and data_len, since they have no
+ - All records are in the format <name (compressed string)><type (16 bits)>
+<class (16 bits)><ttl (32 bits)><data_len (16 bits)><data_len bytes of actual data>
+ - The header contains information on the sizes of the other records.
+ - The qd records are bizarre.  They leave out the ttl and data_len and have no
 actual data, so they're a special case.  They seem to be extraneous, so I just
-skip them.  Maybe dn_expand() uses them?  The other three kinds of records are
-all the same format.
+skip them.  Maybe dn_expand() uses them?
+ - The last three parts are all the same format.
  - Depend on data_len for getting to the next record, not the format of the
 record itself because you probably won't always know the format for the type of
 data in the record.  Remember, data_len does not include the length of the
@@ -261,84 +265,75 @@ general:
  - domain names need to be dn_expand()ed
  - text fields are preceeded by a byte indicating their length and should not
 be dn_expand()ed
- - numerical fields are a raw short or long. (or maybe a byte...)
+ - numerical fields are raw 16 or 32 bit ints.
 
-For example, the MX record format is:  <priority (short)><host name (compressed
-string)>  Use dn_expand() on the host name.
+The MX record format is:  <priority (16 bits)><host name (compressed string)>
+Use dn_expand() on the host name.
 
-For HINFO records, record format is:
+The HINFO record format is:
 <string-length (byte)><CPU type (raw text string)><string-length (byte)><OS
 type (raw text string)>
 
-For A records, the record format is simply:
-<IP address (long)>
+The A record format is simply:
+<IP address (32 bits)>
 	*/
 
 
 	if((tmpint = res_query(name, class, type, ans_buf, sizeof(ans_buf))) == -1) return -1;
-	if(tmpint > sizeof(ans_buf)) printf("ALKSDJFKLASDHGKLSJADHGLAKSDHG %i > %i\n", tmpint, sizeof(ans_buf)), fflush(stdout), kill(getpid(), SIGSEGV);
-	ans_end = ans_buf + tmpint;
-	data = ans_buf + sizeof(HEADER);
+	if(tmpint > sizeof(ans_buf)) fprintf(stderr, "BUFFER OVERFLOW! res_query() returned a response with size %i into buffer with size %i in %s on line %i\n", tmpint, sizeof(ans_buf), __FILE__, __LINE__), fflush(stderr), kill(getpid(), SIGSEGV);
+	ans_end = ans_buf + tmpint;  /* Bizarre parameter for calls to dn_expand() */
+	data = ans_buf + sizeof(HEADER); /* Location of the data we're processing, for calls to dn_expand() */
 	header = (HEADER *)ans_buf;
 
 	/* Skip past this - it's just the name we looked up. */
 	loop = ntohs(header->qdcount);
 	while(loop--) {
-		if((tmpint = dn_expand(ans_buf, ans_end, data, buf, buf_size)) < 0) {
-			h_errno = NO_RECOVERY;
-			PANIC
-			return -1;
-		}
-		data += tmpint + sizeof(short)*2; /* Skip past entry, type, and class */
+		/* Get the length of the data so we can skip past it */
+		if((tmpint = dn_expand(ans_buf, ans_end, data, buf, buf_size)) < 0) PANIC
+		data += tmpint + sizeof(int16_t)*2; /* Skip past entry, type, and class */
 	}
 
 	/* This is the requested information. */
 	loop = ntohs(header->ancount) + ntohs(header->nscount) + ntohs(header->arcount);
 	while(loop-- && res_pos < max_answers) {
-		/* Find out what host this record pertains to */
-		if((tmpint = dn_expand(ans_buf, ans_end, data, buf, buf_size)) < 0) {
-			h_errno = NO_RECOVERY;
-			PANIC
-			return -1;
-		}
-		data += tmpint;
+		/* Find out what host this record pertains to and the length of the data */
+		if((tmpint = dn_expand(ans_buf, ans_end, data, buf, buf_size)) < 0) PANIC
+		data += tmpint; /* Length of compressed name */
 		response[res_pos].name = buf;
-		tmpint = strlen(buf) + 1;
+		tmpint = strlen(buf) + 1; /* Length of uncompressed name */
 		buf += tmpint;
 		buf_size -= tmpint;
 
-		response[res_pos].type = ntohs(*(unsigned short *)data);
-		data += sizeof(short);
+		response[res_pos].type = ntohs(*(u_int16_t *)data);
+		data += sizeof(u_int16_t);
 
-		response[res_pos].class = ntohs(*(unsigned short *)data);
-		data += sizeof(short);
+		response[res_pos].class = ntohs(*(u_int16_t *)data);
+		data += sizeof(u_int16_t);
 
-		response[res_pos].ttl = ntohl(*(unsigned long *)data);
-		data += sizeof(long);
+		response[res_pos].ttl = ntohl(*(u_int32_t *)data);
+		data += sizeof(u_int32_t);
 
 		/* This gives us the position of the next record. */
-		tmpint = ntohs(*(unsigned short *)data);
-		data += sizeof(short);
+		tmpint = ntohs(*(u_int16_t *)data);
+		data += sizeof(u_int16_t);
 		ptr = data;
 		data += tmpint;
+		/* ptr now points to the type-specific information.  Data now
+		 * points to the next record.  Next we figure out how to
+		 * interpret this record. */
 
-		/* ptr points to the type-specific information. */
-		bzero(&response[res_pos].info, sizeof(response[res_pos].info));
+		memset(&response[res_pos].info, 0, sizeof(response[res_pos].info));
 		switch(response[res_pos].type) {
 		case T_A:
-			response[res_pos].info.a.s_addr = *(unsigned long *)ptr;
+			response[res_pos].info.a.s_addr = *(u_int32_t *)ptr;
 		break;
 		case T_MX:
-			response[res_pos].info.mx.pref = ntohs(*(unsigned short *)ptr);
-			ptr += sizeof(short);
+			response[res_pos].info.mx.pref = ntohs(*(u_int16_t *)ptr);
+			ptr += sizeof(u_int16_t);
 		case T_CNAME:
 		case T_NS:
 		case T_PTR:
-			if((tmpint = dn_expand(ans_buf, ans_end, ptr, buf, buf_size)) < 0) {
-				h_errno = NO_RECOVERY;
-				PANIC
-				return -1;
-			}
+			if((tmpint = dn_expand(ans_buf, ans_end, ptr, buf, buf_size)) < 0) PANIC
 			ptr += tmpint;
 			response[res_pos].info.ptr.addr = buf;
 			tmpint = strlen(buf) + 1;
@@ -346,38 +341,30 @@ For A records, the record format is simply:
 			buf_size -= tmpint;
 		break;
 		case T_SOA:
-			if((tmpint = dn_expand(ans_buf, ans_end, ptr, buf, buf_size)) < 0) {
-				h_errno = NO_RECOVERY;
-				PANIC
-				return -1;
-			}
+			if((tmpint = dn_expand(ans_buf, ans_end, ptr, buf, buf_size)) < 0) PANIC
 			ptr += tmpint;
 			response[res_pos].info.soa.addr = buf;
 			tmpint = strlen(buf) + 1;
 			buf += tmpint;
 			buf_size -= tmpint;
 
-			if((tmpint = dn_expand(ans_buf, ans_end, ptr, buf, buf_size)) < 0) {
-				h_errno = NO_RECOVERY;
-				PANIC
-				return -1;
-			}
+			if((tmpint = dn_expand(ans_buf, ans_end, ptr, buf, buf_size)) < 0) PANIC
 			ptr += tmpint;
 			response[res_pos].info.soa.maintainer = buf;
 			tmpint = strlen(buf) + 1;
 			buf += tmpint;
 			buf_size -= tmpint;
 
-			response[res_pos].info.soa.serial = ntohl(*(unsigned long *)ptr);
-			ptr += sizeof(long);
-			response[res_pos].info.soa.refresh = ntohl(*(unsigned long *)ptr);
-			ptr += sizeof(long);
-			response[res_pos].info.soa.retry = ntohl(*(unsigned long *)ptr);
-			ptr += sizeof(long);
-			response[res_pos].info.soa.expire = ntohl(*(unsigned long *)ptr);
-			ptr += sizeof(long);
-			response[res_pos].info.soa.def_ttl = ntohl(*(unsigned long *)ptr);
-			ptr += sizeof(long);
+			response[res_pos].info.soa.serial = ntohl(*(u_int32_t *)ptr);
+			ptr += sizeof(u_int32_t);
+			response[res_pos].info.soa.refresh = ntohl(*(u_int32_t *)ptr);
+			ptr += sizeof(u_int32_t);
+			response[res_pos].info.soa.retry = ntohl(*(u_int32_t *)ptr);
+			ptr += sizeof(u_int32_t);
+			response[res_pos].info.soa.expire = ntohl(*(u_int32_t *)ptr);
+			ptr += sizeof(u_int32_t);
+			response[res_pos].info.soa.def_ttl = ntohl(*(u_int32_t *)ptr);
+			ptr += sizeof(u_int32_t);
 		break;
 		case T_NULL:
 		break;
