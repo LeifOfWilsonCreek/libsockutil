@@ -15,7 +15,9 @@ int server_tcp(u_int32_t address, u_int16_t port) {
 	struct sockaddr_in listen_sock, remote_sock;
 
 	bzero(&listen_sock, sizeof(listen_sock));
+#ifndef __linux__
 	listen_sock.sin_len = sizeof(listen_sock);
+#endif
 	listen_sock.sin_family = AF_INET;
 	listen_sock.sin_port = htons(port);
 	listen_sock.sin_addr.s_addr = htonl(address);

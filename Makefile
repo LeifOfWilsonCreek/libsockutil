@@ -8,7 +8,7 @@ sockutil.o: sockutil.h sockutil.c
 	$(CC) -O2 -Wall -fpic -c sockutil.c
 
 lookup: lookup.c libsockutil.a
-	$(CC) -O2 -Wall -o lookup lookup.c libsockutil.a
+	$(CC) -O2 -Wall -o lookup lookup.c libsockutil.a || $(CC) -O2 -Wall -o lookup lookup.c libsockutil.a -lresolv
 
 install: all
 	install -m 0644 -o root -g wheel sockutil.h /usr/include
