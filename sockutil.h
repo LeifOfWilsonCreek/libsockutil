@@ -23,19 +23,19 @@ int dns_stot(const char *string);
 
 struct ns_response {
 	char *name;
-	int class;
-	int type;
-	unsigned int ttl;
+	u_int16_t class;
+	u_int16_t type;
+	u_int32_t ttl;
 	union {
-		struct in_addr a;
+		struct { u_int32_t addr; } a;
 		struct { char *addr; } ns;
 		struct { char *addr; } cname;
-		struct { char *addr; int pref; } mx;
+		struct { char *addr; u_int16_t pref; } mx;
 		struct { char *addr; } ptr;
 		struct {
 			char *addr;
 			char *maintainer;
-			int serial, refresh, retry, expire, def_ttl;
+			u_int32_t serial, refresh, retry, expire, def_ttl;
 		} soa;
 		struct { char *cpu; char *os; } hinfo;
 		struct { char *text; } txt;
@@ -55,5 +55,9 @@ struct ns_response {
  * returned and h_errno is set.  If the result is too large, it will return -1
  * and set h_errno to NO_RECOVERY. */
 int lookup(const char *name, int class, int type, struct ns_response *response, int max_answers, char *buf, size_t buf_size);
+
+/* Run a server on the specified address and port.  Specify 0 to pick either
+ * automatically. */
+int server_tcp(u_int32_t address, u_int16_t port);
 
 #endif

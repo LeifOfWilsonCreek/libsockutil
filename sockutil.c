@@ -8,8 +8,33 @@
 #include <unistd.h>
 
 
-#define DEBUG
+//#define DEBUG
 
+int server_tcp(u_int32_t address, u_int16_t port) {
+	int listenfd, sockfd, tmpint;
+	struct sockaddr_in listen_sock, remote_sock;
+
+	bzero(&listen_sock, sizeof(listen_sock));
+	listen_sock.sin_len = sizeof(listen_sock);
+	listen_sock.sin_family = AF_INET;
+	listen_sock.sin_port = htons(port);
+	listen_sock.sin_addr.s_addr = htonl(address);
+
+	if((listenfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) return -1;
+	if(bind(listenfd, (struct sockaddr *)&listen_sock, sizeof(listen_sock)) == -1) return -1;
+	if(listen(listenfd, 128) == -1) return -1;
+	while(1) {
+		tmpint = sizeof(remote_sock);
+		if((sockfd = accept(listenfd, (struct sockaddr *)&remote_sock, &tmpint)) == -1) return -1;
+		tmpint = fork();
+/*		if(tmpint == -1) Just close() and keep listening. */
+		if(tmpint == 0) break; /* Child breaks */
+		close(sockfd);
+	}
+	/* Child server */
+	close(listenfd);
+	return sockfd;
+}
 
 int ident(int fd, char *buf, size_t buf_size) {
 	struct sockaddr_in their_addr, my_addr;
@@ -68,157 +93,363 @@ int ident(int fd, char *buf, size_t buf_size) {
 
 /* type-to-string converter */
 const char *dns_ttos(int type) {
-	switch(type) {
-		case T_A:	return("A");		/* internet address */
-		case T_NS:	return("NS");		/* authoritative server */
-		case T_MD:	return("MD");		/* mail destination */
-		case T_MF:	return("MF");		/* mail forwarder */
-		case T_CNAME:	return("CNAME");	/* canonical name */
-		case T_SOA:	return("SOA");		/* start of auth zone */
-		case T_MB:	return("MB");		/* mailbox domain name */
-		case T_MG:	return("MG");		/* mail group member */
-		case T_MR:	return("MR");		/* mail rename name */
-		case T_NULL:	return("NULL");		/* null resource record */
-		case T_WKS:	return("WKS");		/* well known service */
-		case T_PTR:	return("PTR");		/* domain name pointer */
-		case T_HINFO:	return("HINFO");	/* host information */
-		case T_MINFO:	return("MINFO");	/* mailbox information */
-		case T_MX:	return("MX");		/* mail routing info */
-		case T_TXT:	return("TXT");		/* descriptive text */
-		case T_RP:	return("RP");		/* responsible person */
-		case T_AFSDB:	return("AFSDB");	/* afs database location */
-		case T_X25:	return("X25");		/* x25 address */
-		case T_ISDN:	return("ISDN");		/* isdn address */
-		case T_RT:	return("RT");		/* route through host */
-		case T_NSAP:	return("NSAP");		/* nsap address */
-#ifdef T_NSAP_PTR
-		case T_NSAP_PTR: return("NSAP_PTR");	/* reverse NSAP lookup (deprecated) */
-#endif
-		case T_SIG:	return("SIG");		/* security signature */
-		case T_KEY:	return("KEY");		/* security key */
-		case T_PX:	return("PX");		/* rfc822 - x400 mapping */
-#ifdef T_GPOS
-		case T_GPOS:	return("GPOS");		/* geographical position (withdrawn) */
-#endif
-		case T_AAAA:	return("AAAA");		/* ip v6 address */
-		case T_LOC:	return("LOC");		/* geographical location */
-		case T_NXT:	return("NXT");		/* next valid name */
-		case T_EID:	return("EID");		/* endpoint identifier */
-		case T_NIMLOC:	return("NIMLOC");	/* nimrod locator */
-		case T_SRV:	return("SRV");		/* service info */
-		case T_ATMA:	return("ATMA");		/* atm address */
-		case T_NAPTR:	return("NAPTR");	/* naming authority urn */
-		case T_UINFO:	return("UINFO");	/* user information */
-		case T_UID:	return("UID");		/* user ident */
-		case T_GID:	return("GID");		/* group ident */
-		case T_UNSPEC:	return("UNSPEC");	/* unspecified binary data */
-		case T_IXFR:	return("IXFR");		/* incremental zone transfer */
-		case T_AXFR:	return("AXFR");		/* zone transfer */
-		case T_MAILB:	return("MAILB");	/* matches MB/MR/MG/MINFO */
-		case T_MAILA:	return("MAILA");	/* matches MD/MF */
-		case T_ANY:	return("ANY");		/* matches any type */
-		default:	return 0;		/* unknown */
-	}
+	char *names[256] = {
+		0,		/*   0 */
+		"A",		/*   1 */	/* internet address */
+		"NS",		/*   2 */	/* authoritative server */
+		"MD",		/*   3 */	/* mail destination */
+		"MF",		/*   4 */	/* mail forwarder */
+		"CNAME",	/*   5 */	/* canonical name */
+		"SOA",		/*   6 */	/* start of auth zone */
+		"MB",		/*   7 */	/* mailbox domain name */
+		"MG",		/*   8 */	/* mail group member */
+		"MR",		/*   9 */	/* mail rename name */
+		"NULL",		/*  10 */	/* null resource record */
+		"WKS",		/*  11 */	/* well known service */
+		"PTR",		/*  12 */	/* domain name pointer */
+		"HINFO",	/*  13 */	/* host information */
+		"MINFO",	/*  14 */	/* mailbox information */
+		"MX",		/*  15 */	/* mail routing info */
+		"TXT",		/*  16 */	/* descriptive text */
+		"RP",		/*  17 */	/* responsible person */
+		"AFSDB",	/*  18 */	/* afs database location */
+		"X25",		/*  19 */	/* x25 address */
+		"ISDN",		/*  20 */	/* isdn address */
+		"RT",		/*  21 */	/* route through host */
+		"NSAP",		/*  22 */	/* nsap address */
+		"NSAP_PTR",	/*  23 */	/* reverse NSAP lookup (deprecated) */
+		"SIG",		/*  24 */	/* security signature */
+		"KEY",		/*  25 */	/* security key */
+		"PX",		/*  26 */	/* rfc822 - x400 mapping */
+		"GPOS",		/*  27 */	/* geographical position (withdrawn) */
+		"AAAA",		/*  28 */	/* ip v6 address */
+		"LOC",		/*  29 */	/* geographical location */
+		"NXT",		/*  30 */	/* next valid name */
+		"EID",		/*  31 */	/* endpoint identifier */
+		"NIMLOC",	/*  32 */	/* nimrod locator */
+		"SRV",		/*  33 */	/* service info */
+		"ATMA",		/*  34 */	/* atm address */
+		"NAPTR",	/*  35 */	/* naming authority urn */
+		0,		/*  36 */
+		0,		/*  37 */
+		0,		/*  38 */
+		0,		/*  39 */
+		0,		/*  40 */
+		0,		/*  41 */
+		0,		/*  42 */
+		0,		/*  43 */
+		0,		/*  44 */
+		0,		/*  45 */
+		0,		/*  46 */
+		0,		/*  47 */
+		0,		/*  48 */
+		0,		/*  49 */
+		0,		/*  50 */
+		0,		/*  51 */
+		0,		/*  52 */
+		0,		/*  53 */
+		0,		/*  54 */
+		0,		/*  55 */
+		0,		/*  56 */
+		0,		/*  57 */
+		0,		/*  58 */
+		0,		/*  59 */
+		0,		/*  60 */
+		0,		/*  61 */
+		0,		/*  62 */
+		0,		/*  63 */
+		0,		/*  64 */
+		0,		/*  65 */
+		0,		/*  66 */
+		0,		/*  67 */
+		0,		/*  68 */
+		0,		/*  69 */
+		0,		/*  70 */
+		0,		/*  71 */
+		0,		/*  72 */
+		0,		/*  73 */
+		0,		/*  74 */
+		0,		/*  75 */
+		0,		/*  76 */
+		0,		/*  77 */
+		0,		/*  78 */
+		0,		/*  79 */
+		0,		/*  80 */
+		0,		/*  81 */
+		0,		/*  82 */
+		0,		/*  83 */
+		0,		/*  84 */
+		0,		/*  85 */
+		0,		/*  86 */
+		0,		/*  87 */
+		0,		/*  88 */
+		0,		/*  89 */
+		0,		/*  90 */
+		0,		/*  91 */
+		0,		/*  92 */
+		0,		/*  93 */
+		0,		/*  94 */
+		0,		/*  95 */
+		0,		/*  96 */
+		0,		/*  97 */
+		0,		/*  98 */
+		0,		/*  99 */
+		"UINFO",	/* 100 */	/* user information (non-standard) */
+		"UID",		/* 101 */	/* user ident (non-standard) */
+		"GID",		/* 102 */	/* group ident (non-standard) */
+		"UNSPEC",	/* 103 */	/* unspecified binary data (non-standard) */
+		0,		/* 104 */
+		0,		/* 105 */
+		0,		/* 106 */
+		0,		/* 107 */
+		0,		/* 108 */
+		0,		/* 109 */
+		0,		/* 110 */
+		0,		/* 111 */
+		0,		/* 112 */
+		0,		/* 113 */
+		0,		/* 114 */
+		0,		/* 115 */
+		0,		/* 116 */
+		0,		/* 117 */
+		0,		/* 118 */
+		0,		/* 119 */
+		0,		/* 120 */
+		0,		/* 121 */
+		0,		/* 122 */
+		0,		/* 123 */
+		0,		/* 124 */
+		0,		/* 125 */
+		0,		/* 126 */
+		0,		/* 127 */
+		0,		/* 128 */
+		0,		/* 129 */
+		0,		/* 130 */
+		0,		/* 131 */
+		0,		/* 132 */
+		0,		/* 133 */
+		0,		/* 134 */
+		0,		/* 135 */
+		0,		/* 136 */
+		0,		/* 137 */
+		0,		/* 138 */
+		0,		/* 139 */
+		0,		/* 140 */
+		0,		/* 141 */
+		0,		/* 142 */
+		0,		/* 143 */
+		0,		/* 144 */
+		0,		/* 145 */
+		0,		/* 146 */
+		0,		/* 147 */
+		0,		/* 148 */
+		0,		/* 149 */
+		0,		/* 150 */
+		0,		/* 151 */
+		0,		/* 152 */
+		0,		/* 153 */
+		0,		/* 154 */
+		0,		/* 155 */
+		0,		/* 156 */
+		0,		/* 157 */
+		0,		/* 158 */
+		0,		/* 159 */
+		0,		/* 160 */
+		0,		/* 161 */
+		0,		/* 162 */
+		0,		/* 163 */
+		0,		/* 164 */
+		0,		/* 165 */
+		0,		/* 166 */
+		0,		/* 167 */
+		0,		/* 168 */
+		0,		/* 169 */
+		0,		/* 170 */
+		0,		/* 171 */
+		0,		/* 172 */
+		0,		/* 173 */
+		0,		/* 174 */
+		0,		/* 175 */
+		0,		/* 176 */
+		0,		/* 177 */
+		0,		/* 178 */
+		0,		/* 179 */
+		0,		/* 180 */
+		0,		/* 181 */
+		0,		/* 182 */
+		0,		/* 183 */
+		0,		/* 184 */
+		0,		/* 185 */
+		0,		/* 186 */
+		0,		/* 187 */
+		0,		/* 188 */
+		0,		/* 189 */
+		0,		/* 190 */
+		0,		/* 191 */
+		0,		/* 192 */
+		0,		/* 193 */
+		0,		/* 194 */
+		0,		/* 195 */
+		0,		/* 196 */
+		0,		/* 197 */
+		0,		/* 198 */
+		0,		/* 199 */
+		0,		/* 200 */
+		0,		/* 201 */
+		0,		/* 202 */
+		0,		/* 203 */
+		0,		/* 204 */
+		0,		/* 205 */
+		0,		/* 206 */
+		0,		/* 207 */
+		0,		/* 208 */
+		0,		/* 209 */
+		0,		/* 210 */
+		0,		/* 211 */
+		0,		/* 212 */
+		0,		/* 213 */
+		0,		/* 214 */
+		0,		/* 215 */
+		0,		/* 216 */
+		0,		/* 217 */
+		0,		/* 218 */
+		0,		/* 219 */
+		0,		/* 220 */
+		0,		/* 221 */
+		0,		/* 222 */
+		0,		/* 223 */
+		0,		/* 224 */
+		0,		/* 225 */
+		0,		/* 226 */
+		0,		/* 227 */
+		0,		/* 228 */
+		0,		/* 229 */
+		0,		/* 230 */
+		0,		/* 231 */
+		0,		/* 232 */
+		0,		/* 233 */
+		0,		/* 234 */
+		0,		/* 235 */
+		0,		/* 236 */
+		0,		/* 237 */
+		0,		/* 238 */
+		0,		/* 239 */
+		0,		/* 240 */
+		0,		/* 241 */
+		0,		/* 242 */
+		0,		/* 243 */
+		0,		/* 244 */
+		0,		/* 245 */
+		0,		/* 246 */
+		0,		/* 247 */
+		0,		/* 248 */
+		0,		/* 249 */
+		0,		/* 250 */
+		"IXFR",		/* 251 */	/* incremental zone transfer */
+		"AXFR",		/* 252 */	/* transfer zone of authority */
+		"MAILB",	/* 253 */	/* matches MB/MR/MG/MINFO */
+		"MAILA",	/* 254 */	/* matches MD/MF */
+		"ANY"		/* 255 */	/* matches any type */
+	};
+
+	if(type >= 0 && type <= 255)
+		return names[type];
+	return 0;	/* NULL == Unknown */
 }
 
 
 /* type-to-string converter */
 int dns_stot(const char *type) {
-	if(!strcasecmp(type, "A")) {
-		return T_A;		/* internet address */
-	} else if(!strcasecmp(type, "NS")) {
-		return T_NS;		/* authoritative server */
-	} else if(!strcasecmp(type, "MD")) {
-		return T_MD;		/* mail destination */
-	} else if(!strcasecmp(type, "MF")) {
-		return T_MF;		/* mail forwarder */
-	} else if(!strcasecmp(type, "CNAME")) {
-		return T_CNAME;		/* canonical name */
-	} else if(!strcasecmp(type, "SOA")) {
-		return T_SOA;		/* start of auth zone */
-	} else if(!strcasecmp(type, "MB")) {
-		return T_MB;		/* mailbox domain name */
-	} else if(!strcasecmp(type, "MG")) {
-		return T_MG;		/* mail group member */
-	} else if(!strcasecmp(type, "MR")) {
-		return T_MR;		/* mail rename name */
-	} else if(!strcasecmp(type, "NULL")) {
-		return T_NULL;		/* null resource record */
-	} else if(!strcasecmp(type, "WKS")) {
-		return T_WKS;		/* well known service */
-	} else if(!strcasecmp(type, "PTR")) {
-		return T_PTR;		/* domain name pointer */
-	} else if(!strcasecmp(type, "HINFO")) {
-		return T_HINFO;		/* host information */
-	} else if(!strcasecmp(type, "MINFO")) {
-		return T_MINFO;		/* mailbox information */
-	} else if(!strcasecmp(type, "MX")) {
-		return T_MX;		/* mail routing info */
-	} else if(!strcasecmp(type, "TXT")) {
-		return T_TXT;		/* descriptive text */
-	} else if(!strcasecmp(type, "RP")) {
-		return T_RP;		/* responsible person */
-	} else if(!strcasecmp(type, "AFSDB")) {
-		return T_AFSDB;		/* afs database location */
-	} else if(!strcasecmp(type, "X25")) {
-		return T_X25;		/* x25 address */
-	} else if(!strcasecmp(type, "ISDN")) {
-		return T_ISDN;		/* isdn address */
-	} else if(!strcasecmp(type, "RT")) {
-		return T_RT;		/* route through host */
-	} else if(!strcasecmp(type, "NSAP")) {
-		return T_NSAP;		/* nsap address */
-#ifdef NSAP_PTR
-	} else if(!strcasecmp(type, "NSAP_PTR")) {
-		return T_NSAP_PTR;	/* reverse NSAP lookup (deprecated) */
-#endif
-	} else if(!strcasecmp(type, "SIG")) {
-		return T_SIG;		/* security signature */
-	} else if(!strcasecmp(type, "KEY")) {
-		return T_KEY;		/* security key */
-	} else if(!strcasecmp(type, "PX")) {
-		return T_PX;		/* rfc822 - x400 mapping */
-#ifdef T_GPOS
-	} else if(!strcasecmp(type, "GPOS")) {
-		return T_GPOS;		/* geographical position (withdrawn) */
-#endif
-	} else if(!strcasecmp(type, "AAAA")) {
-		return T_AAAA;		/* ip v6 address */
-	} else if(!strcasecmp(type, "LOC")) {
-		return T_LOC;		/* geographical location */
-	} else if(!strcasecmp(type, "NXT")) {
-		return T_NXT;		/* next valid name */
-	} else if(!strcasecmp(type, "EID")) {
-		return T_EID;		/* endpoint identifier */
-	} else if(!strcasecmp(type, "NIMLOC")) {
-		return T_NIMLOC;	/* nimrod locator */
-	} else if(!strcasecmp(type, "SRV")) {
-		return T_SRV;		/* service info */
-	} else if(!strcasecmp(type, "ATMA")) {
-		return T_ATMA;		/* atm address */
-	} else if(!strcasecmp(type, "NAPTR")) {
-		return T_NAPTR;		/* naming authority urn */
-	} else if(!strcasecmp(type, "UINFO")) {
-		return T_UINFO;		/* user information */
-	} else if(!strcasecmp(type, "UID")) {
-		return T_UID;		/* user ident */
-	} else if(!strcasecmp(type, "GID")) {
-		return T_GID;		/* group ident */
-	} else if(!strcasecmp(type, "UNSPEC")) {
-		return T_UNSPEC;	/* unspecified binary data */
-	} else if(!strcasecmp(type, "IXFR")) {
-		return T_IXFR;		/* incremental zone transfer */
-	} else if(!strcasecmp(type, "AXFR")) {
-		return T_AXFR;		/* zone transfer */
-	} else if(!strcasecmp(type, "MAILB")) {
-		return T_MAILB;		/* matches MB/MR/MG/MINFO */
-	} else if(!strcasecmp(type, "MAILA")) {
-		return T_MAILA;		/* matches MD/MF */
-	} else if(!strcasecmp(type, "ANY")) {
-		return T_ANY;		/* matches any type */
-	} else {
-		return -1;		/* unknown */
-	}
+	if(!strcasecmp(type, "A"))
+		return 1;	/* T_A */	/* internet address */
+	else if(!strcasecmp(type, "NS"))
+		return 2;	/* T_NS */	/* authoritative server */
+	else if(!strcasecmp(type, "MD"))
+		return 3;	/* T_MD */	/* mail destination */
+	else if(!strcasecmp(type, "MF"))
+		return 4;	/* T_MF */	/* mail forwarder */
+	else if(!strcasecmp(type, "CNAME"))
+		return 5;	/* T_CNAME */	/* canonical name */
+	else if(!strcasecmp(type, "SOA"))
+		return 6;	/* T_SOA */	/* start of auth zone */
+	else if(!strcasecmp(type, "MB"))
+		return 7;	/* T_MB */	/* mailbox domain name */
+	else if(!strcasecmp(type, "MG"))
+		return 8;	/* T_MG */	/* mail group member */
+	else if(!strcasecmp(type, "MR"))
+		return 9;	/* T_MR */	/* mail rename name */
+	else if(!strcasecmp(type, "NULL"))
+		return 10;	/* T_NULL */	/* null resource record */
+	else if(!strcasecmp(type, "WKS"))
+		return 11;	/* T_WKS */	/* well known service */
+	else if(!strcasecmp(type, "PTR"))
+		return 12;	/* T_PTR */	/* domain name pointer */
+	else if(!strcasecmp(type, "HINFO"))
+		return 13;	/* T_HINFO */	/* host information */
+	else if(!strcasecmp(type, "MINFO"))
+		return 14;	/* T_MINFO */	/* mailbox information */
+	else if(!strcasecmp(type, "MX"))
+		return 15;	/* T_MX */	/* mail routing info */
+	else if(!strcasecmp(type, "TXT"))
+		return 16;	/* T_TXT */	/* descriptive text */
+	else if(!strcasecmp(type, "RP"))
+		return 17;	/* T_RP */	/* responsible person */
+	else if(!strcasecmp(type, "AFSDB"))
+		return 18;	/* T_AFSDB */	/* afs database location */
+	else if(!strcasecmp(type, "X25"))
+		return 19;	/* T_X25 */	/* x25 address */
+	else if(!strcasecmp(type, "ISDN"))
+		return 20;	/* T_ISDN */	/* isdn address */
+	else if(!strcasecmp(type, "RT"))
+		return 21;	/* T_RT */	/* route through host */
+	else if(!strcasecmp(type, "NSAP"))
+		return 22;	/* T_NSAP */	/* nsap address */
+	else if(!strcasecmp(type, "NSAP_PTR"))
+		return 23;	/* T_NSAP_PTR*/	/* reverse NSAP lookup (deprecated) */
+	else if(!strcasecmp(type, "SIG"))
+		return 24;	/* T_SIG */	/* security signature */
+	else if(!strcasecmp(type, "KEY"))
+		return 25;	/* T_KEY */	/* security key */
+	else if(!strcasecmp(type, "PX"))
+		return 26;	/* T_PX */	/* rfc822 - x400 mapping */
+	else if(!strcasecmp(type, "GPOS"))
+		return 27;	/* T_GPOS */	/* geographical position (withdrawn) */
+	else if(!strcasecmp(type, "AAAA"))
+		return 28;	/* T_AAAA */	/* ip v6 address */
+	else if(!strcasecmp(type, "LOC"))
+		return 29;	/* T_LOC */	/* geographical location */
+	else if(!strcasecmp(type, "NXT"))
+		return 30;	/* T_NXT */	/* next valid name */
+	else if(!strcasecmp(type, "EID"))
+		return 31;	/* T_EID */	/* endpoint identifier */
+	else if(!strcasecmp(type, "NIMLOC"))
+		return 32;	/* T_NIMLOC */	/* nimrod locator */
+	else if(!strcasecmp(type, "SRV"))
+		return 33;	/* T_SRV */	/* service info */
+	else if(!strcasecmp(type, "ATMA"))
+		return 34;	/* T_ATMA */	/* atm address */
+	else if(!strcasecmp(type, "NAPTR"))
+		return 35;	/* T_NAPTR */	/* naming authority urn */
+	else if(!strcasecmp(type, "UINFO"))
+		return 100;	/* T_UINFO */	/* user information */
+	else if(!strcasecmp(type, "UID"))
+		return 101;	/* T_UID */	/* user ident */
+	else if(!strcasecmp(type, "GID"))
+		return 102;	/* T_GID */	/* group ident */
+	else if(!strcasecmp(type, "UNSPEC"))
+		return 103;	/* T_UNSPEC */	/* unspecified binary data */
+	else if(!strcasecmp(type, "IXFR"))
+		return 251;	/* T_IXFR */	/* incremental zone transfer */
+	else if(!strcasecmp(type, "AXFR"))
+		return 252;	/* T_AXFR */	/* zone transfer */
+	else if(!strcasecmp(type, "MAILB"))
+		return 253;	/* T_MAILB */	/* matches MB/MR/MG/MINFO */
+	else if(!strcasecmp(type, "MAILA"))
+		return 254;	/* T_MAILA */	/* matches MD/MF */
+	else if(!strcasecmp(type, "ANY"))
+		return 255;	/* T_ANY */	/* matches any type */
+	else
+		return -1;			/* unknown */
 }
 
 #ifdef DEBUG
@@ -318,6 +549,7 @@ The A record format is simply:
 		data += sizeof(u_int16_t);
 		ptr = data;
 		data += tmpint;
+
 		/* ptr now points to the type-specific information.  Data now
 		 * points to the next record.  Next we figure out how to
 		 * interpret this record. */
@@ -325,7 +557,7 @@ The A record format is simply:
 		memset(&response[res_pos].info, 0, sizeof(response[res_pos].info));
 		switch(response[res_pos].type) {
 		case T_A:
-			response[res_pos].info.a.s_addr = *(u_int32_t *)ptr;
+			response[res_pos].info.a.addr = ntohl(*(u_int32_t *)ptr);
 		break;
 		case T_MX:
 			response[res_pos].info.mx.pref = ntohs(*(u_int16_t *)ptr);
@@ -418,3 +650,4 @@ The A record format is simply:
 
 	return res_pos;
 }
+#undef PANIC
