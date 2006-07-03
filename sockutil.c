@@ -14,7 +14,7 @@ int server_tcp(u_int32_t address, u_int16_t port) {
 	int listenfd, sockfd, tmpint;
 	struct sockaddr_in listen_sock, remote_sock;
 
-	bzero(&listen_sock, sizeof(listen_sock));
+	memset(&listen_sock, 0, sizeof(listen_sock));
 #ifndef __linux__
 	listen_sock.sin_len = sizeof(listen_sock);
 #endif
@@ -44,13 +44,13 @@ int ident(int fd, char *buf, size_t buf_size) {
 	FILE *sockfp;
 	char *ptr1, *ptr2;
 
-	bzero(&my_addr, sizeof(my_addr));
+	memset(&my_addr, 0, sizeof(my_addr));
 	tmpint = sizeof(my_addr);
 	if(getsockname(fd, (struct sockaddr *)&my_addr, &tmpint)) return -1;
 	my_port = ntohs(my_addr.sin_port);
 	my_addr.sin_port = 0;
 
-	bzero(&their_addr, sizeof(their_addr));
+	memset(&their_addr, 0, sizeof(their_addr));
 	tmpint = sizeof(their_addr);
 	if(getpeername(fd, (struct sockaddr *)&their_addr, &tmpint)) return -1;
 	their_port = ntohs(their_addr.sin_port);
